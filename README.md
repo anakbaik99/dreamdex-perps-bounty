@@ -16,7 +16,7 @@ alone — no account, no token, no screenshot to trust.
 
 ## Quick check
 
-Both API items in #01 reproduce with these three calls and no authentication:
+Both endpoints in #01 reproduce with these three calls and no authentication:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' \

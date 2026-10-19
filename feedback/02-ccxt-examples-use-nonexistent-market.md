@@ -42,12 +42,19 @@ Area: docs
    # ['SOMI/USDso', 'WETH/USDso']
    ```
 
-4. Optionally confirm the runtime failure once installed from the branch:
+4. Confirm the runtime failure with the exchange loaded from that branch. No wallet or network is
+   needed: seed the client with the branch's own market fixture and call `market()` exactly as the
+   docs page does:
 
-   ```ts
-   const ex = new ccxt.dreamdex({ walletAddress: '0x…', privateKey: '0x…' });
-   await ex.loadMarkets();
-   ex.market('SOMI/USDC');   // BadSymbol
+   ```js
+   const ccxt = (await import('./js/ccxt.js')).default;
+   const fixture = (await import('./ts/src/test/static/markets/dreamdex.json',
+     { with: { type: 'json' } })).default;
+
+   const ex = new ccxt.dreamdex({});
+   ex.setMarkets(fixture);
+
+   ex.market('SOMI/USDC');   // throws
    ex.market('SOMI/USDso');  // resolves
    ```
 
@@ -103,18 +110,57 @@ the page a reader reaches without having read `market-data` — supplies the pla
 
 ## Evidence
 
+Branch under test: `somnia-chain/ccxt`, branch `add-dreamdex-exchange`, HEAD `d281cb4`
+(`fix(dreamdex): use mainnet chain ID 5031, remove type from order responses`).
+
+**Source counts on the integration branch**
+
 ```
 $ grep -c "USDC" ts/src/dreamdex.ts
 0
 $ grep -c "USDso" ts/src/dreamdex.ts
 18
-$ python3 -c "import json;d=json.load(open('ts/src/test/static/currencies/dreamdex.json'));print('USDC' in d, list(d))"
-False ['SOMI', 'USDso', 'USDC.e', 'WBTC', 'WETH']
-$ python3 -c "import json;d=json.load(open('ts/src/test/static/markets/dreamdex.json'));print(list(d))"
-['SOMI/USDso', 'WETH/USDso']
 ```
 
-Branch under test: `somnia-chain/ccxt`, `add-dreamdex-exchange`, commit `d281cb4`.
+**The branch's own fixtures**
+
+```
+$ python3 -c "import json;d=json.load(open('ts/src/test/static/currencies/dreamdex.json'));print('USDC in currencies:', 'USDC' in d, '| keys:', list(d))"
+USDC in currencies: False | keys: ['SOMI', 'USDso', 'USDC.e', 'WBTC', 'WETH']
+
+$ python3 -c "import json;d=json.load(open('ts/src/test/static/markets/dreamdex.json'));print('markets:', list(d))"
+markets: ['SOMI/USDso', 'WETH/USDso']
+```
+
+**Runtime — the documented symbol throws, the corrected one resolves**
+
+Loaded from the branch (`js/ccxt.js`, compiled from `ts/src/`), seeded with the fixture above so no
+wallet and no network are involved:
+
+```
+exchange id            : dreamdex
+markets loaded         : SOMI/USDso, WETH/USDso
+markets_by_id keys     : SOMI:USDso, WETH:USDso
+
+ex.market('SOMI/USDC') -> BadSymbol: dreamdex does not have market symbol SOMI/USDC
+ex.market('SOMI/USDso') -> ok: id=SOMI:USDso base=SOMI quote=USDso type=spot
+```
+
+That is the first line of the docs page, run verbatim. `BadSymbol` is raised before any request is
+built, so the reader gets no network error to investigate — just a symbol error that does not name
+the quote currency.
+
+**Live REST API — no `USDC` anywhere**
+
+```
+$ curl -s https://stg.api.dreamdex.io/v0/markets | python3 -c "import json,sys; d=json.load(sys.stdin); rows=d if isinstance(d,list) else d.get('markets',[]); print('symbols:', [m.get('symbol') for m in rows])"
+symbols: ['WBTC:USDso', 'WETH:USDso', 'SOMI:USDso']
+
+$ curl -s https://stg.api.dreamdex.io/v0/markets | grep -o "USDC" | wc -l
+0
+```
+
+Every listed market quotes in `USDso`; the string `USDC` does not occur once in the response.
 
 Counts on the docs page itself (rendered, since it is a client-rendered SPA): `SOMI/USDC` appears
 10 times, `SOMI/USDso` 0 times.
