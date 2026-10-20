@@ -21,12 +21,14 @@ Area: docs
    await exchange.fetchBalance({ symbol: 'SOMI/USDC' });
    ```
 
-2. Fetch the integration branch the page tells you to install:
+2. Fetch the integration branch the page tells you to install. Both trees are needed: `ts/src` holds
+   the TypeScript source and the fixtures this report reads, `js` holds the built module the runtime
+   step imports — checking out `ts/src` alone leaves step 5 with nothing to import:
 
    ```bash
    git clone --depth 1 --branch add-dreamdex-exchange \
      --filter=blob:none --sparse https://github.com/somnia-chain/ccxt
-   cd ccxt && git sparse-checkout set ts/src
+   cd ccxt && git sparse-checkout set ts/src js
    ```
 
 3. Inspect what the exchange actually supports:
@@ -42,7 +44,15 @@ Area: docs
    # ['SOMI/USDso', 'WETH/USDso']
    ```
 
-4. Confirm the runtime failure with the exchange loaded from that branch. No wallet or network is
+4. Install the one runtime dependency the branch's built module imports (`js/src/base/ws/WsClient.js`
+   imports `ws`; without it Node stops at module resolution before any of this report's code runs):
+
+   ```bash
+   npm init -y >/dev/null
+   npm install ws --no-audit --no-fund
+   ```
+
+5. Confirm the runtime failure with the exchange loaded from that branch. No wallet or network is
    needed: seed the client with the branch's own market fixture and call `market()` exactly as the
    docs page does:
 
@@ -95,10 +105,10 @@ market (symbol: string): MarketInterface {
 BadSymbol: dreamdex does not have market symbol SOMI/USDC
 ```
 
-So the first line a new integrator copies from this page throws before any network call is made.
-The exception text does not name the quote currency, and `USDso` is never mentioned on this page,
-so the reader has no local clue where the mistake is. The same defect applies to
-`fetchBalance({ symbol })` and all three `vault*` examples, because each takes a market symbol.
+So the first line a new integrator copies from this page throws at symbol resolution, before the
+ticker request is sent. The exception text does not name the quote currency, and `USDso` is never
+mentioned on this page, so the reader has no local clue where the mistake is. The same defect applies
+to `fetchBalance({ symbol })` and all three `vault*` examples, because each takes a market symbol.
 
 The docs contradict themselves on this point. `/developers/http-api/market-data` warns:
 
@@ -134,21 +144,30 @@ markets: ['SOMI/USDso', 'WETH/USDso']
 
 **Runtime — the documented symbol throws, the corrected one resolves**
 
-Loaded from the branch (`js/ccxt.js`, compiled from `ts/src/`), seeded with the fixture above so no
-wallet and no network are involved:
+Run from an empty directory on 2026-10-20, steps 2 to 5 above verbatim, on branch HEAD `d281cb4`:
 
 ```
+$ git sparse-checkout set ts/src js    # both trees; js/ccxt.js is 18,472 bytes
+$ npm install ws --no-audit --no-fund  # added 1 package
+$ node repro.mjs
 exchange id            : dreamdex
 markets loaded         : SOMI/USDso, WETH/USDso
 markets_by_id keys     : SOMI:USDso, WETH:USDso
-
 ex.market('SOMI/USDC') -> BadSymbol: dreamdex does not have market symbol SOMI/USDC
 ex.market('SOMI/USDso') -> ok: id=SOMI:USDso base=SOMI quote=USDso type=spot
 ```
 
-That is the first line of the docs page, run verbatim. `BadSymbol` is raised before any request is
-built, so the reader gets no network error to investigate — just a symbol error that does not name
-the quote currency.
+Without `ws` installed the same script stops before any of the above, which is why step 4 exists:
+
+```
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'ws' imported from
+  js/src/base/ws/WsClient.js
+```
+
+That is the symbol from the first example on the docs page, resolved by `market()`, the step
+`fetchTicker` performs before it builds a request. `BadSymbol` is raised before any request is built,
+so the reader gets no network error to investigate — just a symbol error that does not name the quote
+currency.
 
 **Live REST API — no `USDC` anywhere**
 
@@ -177,8 +196,9 @@ an observation.
 
 ## Environment
 
-- Network: Somnia Tokyo testnet for markets; the failure occurs before any network call, at
-  symbol resolution
+- Network: Somnia Tokyo testnet for markets; the failure occurs at symbol resolution, after
+  `loadMarkets()` and before any request is built, so no network is touched by the reproduction
+  itself — it seeds markets from the branch's own fixture under `ts/src/test/static/markets/`
 - SDK: `ccxt` fork `somnia-chain/ccxt` @ `add-dreamdex-exchange` (`d281cb4`), exchange id
   `dreamdex`
 - Docs page: https://docs.dreamdex.io/developers/libraries/ccxt
