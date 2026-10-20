@@ -13,7 +13,6 @@ alone — no account, no token, no screenshot to trust.
 |---|---|---|---|
 | 01 | docs | normal | [Comma-separated `symbols` returns 400, but the docs promise a silent empty array](feedback/01-symbols-serialization-returns-400.md) |
 | 02 | docs | major | [Every CCXT example uses SOMI/USDC, a market and currency that do not exist](feedback/02-ccxt-examples-use-nonexistent-market.md) |
-| 03 | app | normal | [The `Set TP/SL` button in the Positions panel cannot be clicked below ~1536px](feedback/03-tpsl-button-not-clickable-below-1536px.md) |
 
 ## Quick check
 
